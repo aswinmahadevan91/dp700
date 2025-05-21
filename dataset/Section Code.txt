@@ -1,0 +1,168 @@
+Section Code
+The below commands can be used as a reference for the code-based chapters in this section
+Lab - Microsoft Fabric - Data warehouse - Ingesting data via T-SQL
+
+1. First we can create the table
+
+CREATE TABLE [SalesOrderHeader] (
+	[SalesOrderID] [int] NULL,
+	[OrderDate] [date] NULL,
+	[Status] [smallint] NULL,	
+	[SalesOrderNumber] [varchar](25) NULL,	
+	[CustomerID] [int] NULL,
+	[SalesPersonID] [int] NULL,
+	[TerritoryID] [int] NULL,	
+	[SubTotal] [float] NULL,
+	[TaxAmt] [float] NULL,
+	[Freight] [float] NULL,
+	[TotalDue] [float] NULL
+);
+2. The data types in Microsoft Fabric
+
+https://learn.microsoft.com/en-us/fabric/data-warehouse/data-types
+
+
+
+3. Then we can copy the data into the table
+
+COPY INTO [SalesOrderHeader]
+FROM 'https://datalake4000023.blob.core.windows.net/data/SalesOrderHeader.csv'
+WITH (
+    FILE_TYPE = 'CSV', 
+    CREDENTIAL = ( 
+                IDENTITY = 'Shared Access Signature'
+                , SECRET = 'sp=r&st=2025-04-15T12:43:23Z&se=2025-04-15T20:43:23Z&spr=https&sv=2024-11-04&sr=b&sig=NbQPNpe2IsVvehuMTjIDCzQsSLdQ79eEOnDpXHZp0DU%3D'
+                ),
+    FIRSTROW = 2
+);
+
+
+Lab - Microsoft Fabric - Data warehouse - Data Flow Gen2 - Completing the workflow
+
+
+
+1. The below command can be used to create the Fact-based table
+
+CREATE TABLE [FactSales](
+	[SalesOrderID] [int] NULL,
+	[OrderDate] [date] NULL,
+	[CustomerID] [int] NULL,
+	[SalesPersonID] [int] NULL,
+	[TerritoryID] [int] NULL,
+	[SubTotal] [float] NULL,
+	[TaxAmt] [float] NULL,
+	[Freight] [float] NULL,
+	[TotalAmt] [float] NULL,
+	[SalesOrderDetailID] [int] NULL,
+	[OrderQty] [int] NULL,
+	[ProductID] [int] NULL
+); 
+
+
+Lab - Microsoft Fabric - Data warehouse - Data Flow Gen2 - Building the dimension tables
+
+1. The below commands can be used to create the dimension tables
+
+CREATE TABLE [DimProduct](
+	[ProductID] [int] NULL,
+	[ProductName] [varchar](50) NULL,
+	[Color] [varchar](15) NULL,
+	[ProductModelName] [varchar](500) NULL
+); 
+ 
+CREATE TABLE [DimCustomer](
+	[CustomerID] [int] NULL,
+        [TerritoryID] [int] NULL,
+	[StoreName] [varchar](500) NULL
+);
+
+
+Lab - Microsoft Fabric - Data warehouse - Data Flow Gen2 - Building the Date Dimension table
+
+1. The below command can be used to create the Date Dimension table
+
+CREATE TABLE [DimDate] (
+	[Date] [date] NULL,
+	[Year] [varchar](6) NULL,
+	[Month] [varchar](12) NULL
+);
+2. The below script can be used to create the dates
+
+let
+    StartDate = #date(2013,1,1),
+    EndDate = #date(2016,05,31),
+    NumberOfDays = Duration.Days( EndDate - StartDate ),
+    Dates = List.Dates(StartDate, NumberOfDays+1, #duration(1,0,0,0))
+in
+  Dates
+
+
+Lab - Microsoft Fabric - Ingesting data - Data Pipeline - Running a stored procedure
+
+CREATE PROC AddDate
+AS
+BEGIN
+	DECLARE @StartDate date;
+	DECLARE @EndDate date;
+	SET @StartDate='2011-05-31'
+    SET @EndDate='2014-06-30'
+WHILE @StartDate <=@EndDate
+	BEGIN
+		INSERT INTO DimDate
+		SELECT @StartDate,datepart(yyyy,@StartDate),datepart(mm,@StartDate)
+		SET @StartDate=dateadd(day,1,@StartDate)
+	END	
+END;
+
+
+Lab - Microsoft Fabric - Data warehouse - T-SQL commands
+
+1. We can get the total order quantity per ProductID
+
+SELECT ProductID,COUNT(OrderQty) AS 'Total'
+FROM FactSales
+GROUP BY ProductID
+ 
+SELECT ProductID,COUNT(OrderQty) AS 'Total Order Quantity'
+FROM FactSales
+GROUP BY ProductID
+ORDER BY 2 DESC
+
+
+2. We can use the DimProduct table to get the total orders per the ProductModelName
+
+SELECT dp.ProductModelName,COUNT(OrderQty) AS 'Total Order Quantity'
+FROM FactSales fs LEFT OUTER JOIN DimProduct dp
+ON fs.ProductID=dp.ProductID
+GROUP BY dp.ProductModelName
+
+
+3. We can also group by the year as well
+
+SELECT dp.ProductModelName,YEAR(fs.OrderDate) AS 'Year',COUNT(OrderQty) AS 'Total Order Quantity'
+FROM FactSales fs LEFT OUTER JOIN DimProduct dp
+ON fs.ProductID=dp.ProductID
+GROUP BY dp.ProductModelName,YEAR(fs.OrderDate)
+
+
+4. Using the rollup clause
+
+In T-SQL, the GROUP BY ROLLUP clause is used to create subtotals and a grand total for a set of grouped columns in an aggregation query. It is part of SQL Server's extension to the GROUP BY clause to simplify hierarchical or multi-level aggregations.
+NULL in output indicates subtotal or grand total rows.
+ 
+SELECT dp.ProductModelName , YEAR(fs.OrderDate) AS 'Year', COUNT(OrderQty) AS 'Total'
+FROM FactSales fs LEFT OUTER JOIN DimProduct dp
+ON fs.ProductID=dp.ProductID
+GROUP BY ROLLUP(dp.ProductModelName,YEAR(fs.OrderDate))
+ORDER BY dp.ProductModelName,YEAR(fs.OrderDate) DESC
+
+
+5. We can use the HAVING clause to filter results
+
+SELECT ds.StoreName,COUNT(fs.OrderQty) AS 'Total Orders'
+FROM FactSales fs LEFT OUTER JOIN DimCustomer ds
+ON fs.CustomerID=ds.CustomerID
+WHERE ds.StoreName IS NOT NULL
+GROUP BY ds.StoreName
+HAVING COUNT(fs.OrderQty)>100
+ORDER BY 2 DESC
